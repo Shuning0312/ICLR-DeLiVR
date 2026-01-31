@@ -232,22 +232,8 @@ lie-transformer/
 
 ---
 
-## 7. Losses
 
-The model uses a combination of losses optimized for PSNR:
-
-| Loss | Weight | Description |
-|------|--------|-------------|
-| Charbonnier | 1.0 | Smooth L1-like loss, zero-differentiable |
-| SSIM | 0.05 | Structural similarity |
-| FFT | 0.05 | Frequency domain loss for high-frequency details |
-| Edge | 0.05 | Edge preservation loss |
-| Lie Velocity | 0.01 | Adjacent-frame rotation smoothness regularization |
-
----
-
-
-## 8. Citation
+## 7. Citation
 
 If you find this code useful, please consider citing:
 
@@ -262,6 +248,6 @@ If you find this code useful, please consider citing:
 
 ---
 
-## 9. License
+## 8. License
 
 This project is released under the MIT License.
