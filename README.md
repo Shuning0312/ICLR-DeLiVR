@@ -2,6 +2,13 @@
 
 This repository provides a PyTorch implementation of **DeLiVR** (Derain with Lie-group Video Restoration), a Lie-group Transformer tailored for video deraining tasks.
 
+
+## 🔔 News
+
+**DeLiVR** has been **accepted to ICLR 2026** 🎉  
+
+- Paper: *DeLiVR: Differential Spatiotemporal Lie Bias for Efficient Video Deraining*  
+- OpenReview discussion: https://openreview.net/forum?id=W2eNfLmCHY
 ---
 
 ## 1. Data Layout
