@@ -1,0 +1,9 @@
+Python 3.10+
+torch>=2.1
+torchvision>=0.16
+numpy>=1.23
+Pillow>=9.0
+tqdm>=4.66
+opencv-python>=4.8
+scikit-image>=0.22
+pyyaml>=6.0

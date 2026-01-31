@@ -1,0 +1,69 @@
+# Configuration for Heavy Derain Video Training
+# Usage: python train_video5.py --config src/config/derain_heavy.yaml
+
+# ============ Data ============
+data_root: /home/exp/dataset/train/heavy
+val_root: /home/exp/dataset/test/heavy
+input_dirname: input
+target_dirname: gt
+
+# Temporal settings
+T: 5
+stride: 1
+pad_mode: replicate
+stack_dim: TC
+crop_size: 256
+
+# ============ Model ============
+embed_dim: 128
+depth: 12
+heads: 8
+mlp_ratio: 4.0
+patch: 8
+
+# ============ Rotation (Lie Group) ============
+so3_mode: so2
+angle_max_deg: 35.0
+so3_stochastic: 0
+angle_reg: 0.001  # 降低正则化，专注重建
+
+# Temporal time bias
+time_weight: 0.5
+time_kappa: 1.0
+
+# Lie-velocity regularization（稍微降低，专注重建）
+w_lievel: 0.01
+lievel_smooth: 0.5
+
+# ============ Training ============
+batch_size: 8  # 降低 batch_size 以适应新增模块的显存需求（CAB, LayerScale 等）
+epochs: 8000   # 增加训练轮数，配合Warm Restarts
+lr: 0.0002  # 2e-4
+workers: 16
+amp: 1
+
+# Training strategy (新增)
+warmup_epochs: 10      # 学习率 warmup 轮数
+grad_clip: 0.5         # 梯度裁剪阈值（更稳定的训练）
+
+# Losses (weights) - PSNR优化配置
+w_l1: 0.0              # 关闭L1，使用Charbonnier替代
+w_l2: 0.0
+w_charb: 1.0           # Charbonnier损失（零点可导，收敛更平滑）
+w_edge: 0.05           # 边缘损失（增加权重）
+w_ssim: 0.05           # SSIM 损失，提升结构相似度
+w_fft: 0.05            # FFT 频域损失，恢复高频细节（去雨关键）
+
+# ============ Logging ============
+save_dir: /home/exp/lie-transformer-camera/runs_Heavy_video_V3
+vis_every: 1000
+val_vis_n: 1
+vis_compare_no_rot: 0
+
+# ============ Multi-GPU ============
+gpus: "1,2,3,5,7"
+use_ddp: 1
+
+# ============ EMA (Exponential Moving Average) ============
+use_ema: 1             # 启用EMA
+ema_decay: 0.999       # EMA衰减率
