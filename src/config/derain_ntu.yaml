@@ -25,34 +25,31 @@ patch: 8
 so3_mode: so2
 angle_max_deg: 35.0
 so3_stochastic: 0
-angle_reg: 0.001  # 降低正则化，专注重建
+angle_reg: 0.001 
 
 # Temporal time bias
 time_weight: 0.5
 time_kappa: 1.0
 
-# Lie-velocity regularization（稍微降低，专注重建）
 w_lievel: 0.01
 lievel_smooth: 0.5
 
 # ============ Training ============
-batch_size: 8  # 降低 batch_size 以适应新增模块的显存需求（CAB, LayerScale 等）
-epochs: 8000   # 增加训练轮数，配合Warm Restarts
+batch_size: 8
+epochs: 8000 
 lr: 0.0002  # 2e-4
 workers: 16
 amp: 1
 
-# Training strategy (新增)
-warmup_epochs: 10      # 学习率 warmup 轮数
-grad_clip: 0.5         # 梯度裁剪阈值（更稳定的训练）
+warmup_epochs: 10     
+grad_clip: 0.5        
 
-# Losses (weights) - PSNR优化配置
-w_l1: 0.0              # 关闭L1，使用Charbonnier替代
+w_l1: 0.0         
 w_l2: 0.0
-w_charb: 1.0           # Charbonnier损失（零点可导，收敛更平滑）
-w_edge: 0.05           # 边缘损失（增加权重）
-w_ssim: 0.05           # SSIM 损失，提升结构相似度
-w_fft: 0.05            # FFT 频域损失，恢复高频细节（去雨关键）
+w_charb: 1.0           
+w_edge: 0.05        
+w_ssim: 0.05        
+w_fft: 0.05          
 
 # ============ Logging ============
 save_dir: /home/exp/lie-transformer-camera/runs_NTU_video_V3
@@ -64,6 +61,5 @@ vis_compare_no_rot: 0
 gpus: "1,2,3,5,7"
 use_ddp: 1
 
-# ============ EMA (Exponential Moving Average) ============
-use_ema: 1             # 启用EMA
-ema_decay: 0.999       # EMA衰减率
+use_ema: 1            
+ema_decay: 0.999    
