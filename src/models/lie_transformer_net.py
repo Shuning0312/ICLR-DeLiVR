@@ -16,29 +16,21 @@ class GDFN(nn.Module):
         self.dim = dim
         self.hidden = hidden
         
-        # 1x1卷积升维 + 门控分支
         self.project_in = nn.Conv2d(dim, hidden * 2, kernel_size=1, bias=True)
-        # 深度可分离卷积（捕捉局部特征）
         self.dwconv = nn.Conv2d(hidden * 2, hidden * 2, kernel_size=3, stride=1, 
                                 padding=1, groups=hidden * 2, bias=True)
         self.act = nn.GELU()
-        # 1x1卷积降维
         self.project_out = nn.Conv2d(hidden, dim, kernel_size=1, bias=True)
         self.drop = nn.Dropout(drop)
 
     def forward(self, x: torch.Tensor, T: int, H: int, W: int) -> torch.Tensor:
-        """
-        x: (B, T*N, C) 时空联合token序列
-        T: 帧数
-        H, W: 单帧patch后的空间尺寸
-        """
+
         B, TN, C = x.shape
         N = H * W
         
         # (B, T*N, C) -> (B*T, C, H, W)
         x = x.view(B, T, N, C).permute(0, 1, 3, 2).reshape(B * T, C, H, W)
         
-        # GDFN核心：升维 -> 深度卷积 -> 门控 -> 降维
         x = self.project_in(x)
         x = self.dwconv(x)
         x1, x2 = x.chunk(2, dim=1)
@@ -66,11 +58,7 @@ class DeepPatchEmbed(nn.Module):
         self.proj = nn.Conv2d(embed_dim, embed_dim, kernel_size=patch, stride=patch)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Tuple[int, int], torch.Tensor]:
-        """
-        x: (B, C_in, H, W)
-        返回: tokens (B, N, C), (H', W'), shallow_feat (B, C, H, W)
-        """
-        shallow_feat = self.stem(x)       # (B, C, H, W) 浅层特征
+        shallow_feat = self.stem(x)       # (B, C, H, W)
         feat = self.proj(shallow_feat)    # (B, C, H', W')
         B, C, H, W = feat.shape
         tokens = feat.flatten(2).transpose(1, 2)  # (B, N, C)
@@ -78,11 +66,6 @@ class DeepPatchEmbed(nn.Module):
 
 
 class NonLinearLieBias(nn.Module):
-    """
-    非线性李群位置偏置变换。
-    将几何相似度（点积）通过MLP映射到多头注意力偏置，
-    保持李群几何意义的同时增加表达能力。
-    """
     def __init__(self, num_heads: int):
         super().__init__()
         self.num_heads = num_heads
@@ -119,13 +102,11 @@ class CAB(nn.Module):
 
     def __init__(self, n_feat: int, kernel_size: int = 3, reduction: int = 8, bias: bool = True):
         super().__init__()
-        # 卷积主体
         self.body = nn.Sequential(
             nn.Conv2d(n_feat, n_feat, kernel_size, padding=kernel_size // 2, bias=bias),
             nn.GELU(),
             nn.Conv2d(n_feat, n_feat, kernel_size, padding=kernel_size // 2, bias=bias)
         )
-        # 通道注意力
         self.ca = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(n_feat, n_feat // reduction, 1, padding=0, bias=True),
@@ -146,26 +127,22 @@ class SmoothUpsample(nn.Module):
     def __init__(self, in_dim: int, out_ch: int, scale: int):
         super().__init__()
         self.scale = scale
-        
-        # 亚像素卷积（PixelShuffle）
+
         self.conv = nn.Conv2d(in_dim, out_ch * scale * scale, kernel_size=3, padding=1)
         self.upsample = nn.PixelShuffle(scale)
         
-        # 添加平滑卷积
         self.smooth = nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv(x)
         x = self.upsample(x)
-        
-        # 应用平滑卷积减少棋盘效应
+
         x = self.smooth(x)
         return x
 
 
-# === temporal decay bias helper ===
 def build_temporal_decay_bias(T: int, N: int, device, dtype, tau = 2.0):
-    t = torch.arange(T, device=device, dtype=torch.float32)   # 强制 fp32
+    t = torch.arange(T, device=device, dtype=torch.float32)   
     dt = (t[:, None] - t[None, :]).abs()                      # (T,T)
     
     if isinstance(tau, torch.Tensor):
@@ -174,9 +151,8 @@ def build_temporal_decay_bias(T: int, N: int, device, dtype, tau = 2.0):
         tau_val = float(tau)
     
     decay_ts = torch.exp(-dt / tau_val)                       # (T,T) fp32
-    # 扩到 token 级别：(T,T)->(T,1,T,1)->(T,N,T,N)->(T*N,T*N)
+
     decay = decay_ts[:, None, :, None].expand(T, N, T, N).reshape(T * N, T * N)
-    # 返回到调用方所需 dtype
     return decay.to(dtype)
 
 
@@ -217,11 +193,6 @@ class MLP(nn.Module):
 
 
 class LieRelativeBias(nn.Module):
-    """
-    构造基于旋转的相对偏置：
-        1) 为 (H,W) 构造单位向量网格 p: (N,3)
-        2) 计算 p_rot = (R @ p^T)^T, 然后 bias = p_rot @ p^T  -> (B, N, N)
-    """
     def __init__(self):
         super().__init__()
         self._p_cache = {}  # key: (H, W, device, dtype) -> (N, 3)
@@ -231,7 +202,6 @@ class LieRelativeBias(nn.Module):
         if key in self._p_cache:
             return self._p_cache[key]
 
-        # 以图像中心为原点，归一化到 [-1,1]，并加 1 作为第三维，然后做 L2 归一化
         ys = torch.arange(H, device=device, dtype=dtype)
         xs = torch.arange(W, device=device, dtype=dtype)
         grid_y, grid_x = torch.meshgrid(ys, xs, indexing='ij')  # (H,W)
@@ -282,15 +252,9 @@ class LieMultiHeadAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        # 非线性李群偏置变换（替代简单的标量缩放）
         self.nonlinear_bias = NonLinearLieBias(num_heads)
 
     def forward(self, x: torch.Tensor, bias: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        x: (B, N, C)
-        bias: (B, N, N)  由 LieRelativeBias 生成的几何相似度
-        return: (out, attn)
-        """
         B, N, C = x.shape
         assert bias.dim() == 3 and bias.shape[0] == B and bias.shape[1] == N and bias.shape[2] == N, \
             f"bias must be (B,N,N), got {tuple(bias.shape)} while x is {(B,N,C)}"
@@ -299,7 +263,6 @@ class LieMultiHeadAttention(nn.Module):
 
         attn = (q @ k.transpose(-2, -1)) * self.scale      # (B, heads, N, N)
         
-        # 使用非线性变换将几何相似度映射到多头偏置
         lie_bias = self.nonlinear_bias(bias)  # (B, num_heads, N, N)
         attn = attn + lie_bias
 
@@ -320,25 +283,17 @@ class LieTransformerBlock(nn.Module):
         self.norm1 = nn.LayerNorm(dim)
         self.attn = LieMultiHeadAttention(dim, num_heads, attn_drop=attn_drop, proj_drop=drop)
         self.norm2 = nn.LayerNorm(dim)
-        # 使用GDFN替代标准MLP，引入局部归纳偏置
         self.gdfn = GDFN(dim, mlp_ratio=mlp_ratio, drop=drop)
         
-        # LayerScale 参数 (来自 CaiT, 提升深层训练稳定性)
         self.gamma1 = nn.Parameter(init_values * torch.ones(dim))
         self.gamma2 = nn.Parameter(init_values * torch.ones(dim))
 
     def forward(self, x: torch.Tensor, bias: torch.Tensor, 
                 T: int, H: int, W: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        x: (B, T*N, C)
-        bias: (B, T*N, T*N)
-        T: 帧数
-        H, W: 单帧patch后的空间尺寸
-        """
+
         res, attn = self.attn(self.norm1(x), bias)
-        # LayerScale: 用可学习的小系数缩放残差
         x = x + self.gamma1.unsqueeze(0).unsqueeze(0) * res
-        # GDFN需要知道空间结构以应用深度卷积
+
         x = x + self.gamma2.unsqueeze(0).unsqueeze(0) * self.gdfn(self.norm2(x), T, H, W)
         return x, attn
 
@@ -349,28 +304,27 @@ class LieTransformerNet(nn.Module):
                  embed_dim: int = 96,
                  depth: int = 6,
                  heads: int = 4,
-                 mlp_ratio: float = 2.66,  # GDFN推荐的ratio
+                 mlp_ratio: float = 2.66, 
                  patch: int = 4,
-                 # 旋转控制（传给 SO3Head）
                  so3_mode: str = 'so2',
                  angle_max_deg: float = 45.0,
                  so3_stochastic: bool = True,
 
                  temporal_tau: float = 2.0,
                  temporal_band: int = 1,
-                 # === 时间项权重与温度 ===
+                 
                  temporal_time_weight: float = 1.0,
                  temporal_time_kappa: float = 1.0,
-                 # === 可开关的偏置组件 ===
+                
                  enable_spatial_bias: bool = True,
                  enable_temporal_bias: bool = True,
                  enable_decay: bool = True,
                  enable_band_mask: bool = True,
-                 # === 可学习 tau 开关 ===
+               
                  learnable_tau: bool = True,
-                 # === CAB refinement 数量 ===
+                
                  num_cab: int = 2,
-                 # 是否返回辅助信息
+                 
                  return_aux: bool = True):
         super().__init__()
         self.in_ch = in_ch
@@ -384,13 +338,13 @@ class LieTransformerNet(nn.Module):
         self.temporal_time_kappa = temporal_time_kappa
         self.return_aux = return_aux
         self.learnable_tau = learnable_tau
-        # 消融开关
+        
         self.enable_spatial_bias = enable_spatial_bias
         self.enable_temporal_bias = enable_temporal_bias
         self.enable_decay = enable_decay
         self.enable_band_mask = enable_band_mask
 
-        # === 可学习的时间衰减参数 ===
+       
         if learnable_tau:
             # softplus(x) + 0.5 = tau => x = log(exp(tau - 0.5) - 1)
             init_val = math.log(math.exp(temporal_tau - 0.5) - 1 + 1e-6)
@@ -410,17 +364,14 @@ class LieTransformerNet(nn.Module):
         # relative bias
         self.rel_bias = LieRelativeBias()
 
-        # transformer blocks (使用GDFN + LayerScale)
+
         self.blocks = nn.ModuleList([
             LieTransformerBlock(embed_dim, heads, mlp_ratio=mlp_ratio, drop=0.0, attn_drop=0.0)
             for _ in range(depth)
         ])
 
-        # 在 Transformer 特征和上采样之间添加细化模块
         self.refinement = nn.Sequential(*[CAB(embed_dim) for _ in range(num_cab)])
 
-        # 简化残差连接，初始化为小值让网络先学习残差
-        # 这比 ResidualGate 更简单且更符合去雨任务的 Global Residual Learning 范式
         self.res_scale = nn.Parameter(torch.ones(1) * 0.1)
 
         self._x_in = None
@@ -431,7 +382,6 @@ class LieTransformerNet(nn.Module):
         else:
             return torch.tensor(self.temporal_tau, device=self.tau_raw.device if hasattr(self, 'tau_raw') else 'cpu')
 
-    # 像素重建头：tokens -> delta -> x_in + delta
     def pixel_head(self, tokens: torch.Tensor, H: int, W: int) -> torch.Tensor:
         B, N, C = tokens.shape
         feat = tokens.transpose(1, 2).contiguous().view(B, C, H, W)  # (B, embed_dim, H', W')
@@ -441,26 +391,14 @@ class LieTransformerNet(nn.Module):
         return delta
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """
-        x: (B, 3*T, H, W)
-        流程：
-          1) 按帧拆分 -> 每帧做 DeepPatchEmbed，保留每帧 feature map 以供 SO3Head 估计 R_t
-          2) 计算每帧旋转 R_t (B,T,3,3)；构造单位坐标嵌入 P(N,3)
-          3) 旋转坐标 RP_t = R_t @ P^T -> (B,T,N,3)
-          4) 构造全对全空间群偏置： <RP_t, RP_s> -> (B, T*N, T*N)
-          5) 构造时间衰减 (T*N,T*N) 并与空间偏置逐元素相乘
-          6) 把 (B,T,N,C) 合并到 (B,T*N,C)，送入每个 TransformerBlock（传入T,H,W供GDFN使用）
-          7) 出块后还原回 (B,T,C,H',W') -> (B, 3*T, H, W) 使用ResidualGate融合
-        """
+
         B, C_in, H, W = x.shape
         assert C_in % self.in_ch == 0, "Channel not divisible by in_ch"
         T = C_in // self.in_ch
         assert T >= 1 and T % 2 == 1, "Expect odd T, e.g., 3/5/7"
 
-        # 保存输入用于残差回加
         self._x_in = x
 
-        # 1) 按帧做 DeepPatchEmbed，并保留 feature map 用于 SO3Head
         x_bt = x.view(B, T, self.in_ch, H, W).reshape(B * T, self.in_ch, H, W)  # (B*T,3,H,W)
         tokens, (H_p, W_p), shallow_feat = self.embed(x_bt)    # tokens: (B*T, N, C), shallow_feat: (B*T, C, H, W)
         N = H_p * W_p
@@ -480,19 +418,15 @@ class LieTransformerNet(nn.Module):
         else:
             v_seq = None
 
-        # 2.1) 单位坐标嵌入 P(N,3)
         device, dtype = tokens.device, tokens.dtype
         P = self.rel_bias._get_p(H_p, W_p, device, dtype)  # (N,3)
 
-        # 3) RP_t = (R_t @ P^T)^T -> (B,T,N,3)
         RP = torch.einsum('btcd,dn->btcn', R, P.t()).transpose(-1, -2).contiguous()
 
-        # 4) 空间群偏置 <RP_t[i], RP_s[j]> -> (B,T*N,T*N)
         bias_space = torch.einsum('btic,bsjc->btisj', RP, RP).reshape(B, T * N, T * N)
         if not getattr(self, 'enable_spatial_bias', True):
             bias_space = bias_space.new_zeros(bias_space.shape)
 
-        # 4.1) Lie-velocity based time bias (B,T,T)
         with torch.no_grad():
             # relative rotation R_rel[b,t,s] = R_t^T R_s
             R_rel = torch.einsum('btij,bsjk->btsik', R.transpose(-1, -2), R)  # (B,T,T,3,3)
@@ -506,7 +440,6 @@ class LieTransformerNet(nn.Module):
             if not getattr(self, 'enable_temporal_bias', True):
                 b_time = b_time.new_zeros(b_time.shape)
 
-        # 5) 时间衰减 (T*N,T*N) - 使用可学习或固定的 tau
         tau = self.get_tau() if self.learnable_tau else self.temporal_tau
         decay = build_temporal_decay_bias(T, N, device, dtype, tau=tau)  # (T*N,T*N)
         if not getattr(self, 'enable_decay', True):
@@ -515,7 +448,6 @@ class LieTransformerNet(nn.Module):
         # final spatiotemporal bias: spatial + (time_weight * time_bias), then apply decay and band mask
         bias = bias_space + self.temporal_time_weight * b_time
         bias = bias * decay.unsqueeze(0)  # (B,T*N,T*N)
-        # === 带状时序掩码：仅保留 |t-s| <= temporal_band 的块，其他置为极小值 ===
         band = int(getattr(self, "temporal_band", 1))
         if getattr(self, 'enable_band_mask', True) and band >= 0:
             with torch.no_grad():
@@ -524,40 +456,29 @@ class LieTransformerNet(nn.Module):
                 mask = dt_ok[:, None, :, None].expand(T, N, T, N).reshape(T * N, T * N)  # (T*N,T*N)
             bias = bias.masked_fill(~mask.unsqueeze(0), -1e4)
 
-        # 6) tokens 合并帧维度并过 Transformer blocks（传入T, H_p, W_p供GDFN使用）
         X = tokens.view(B, T, N, self.embed_dim).reshape(B, T * N, self.embed_dim)  # (B,T*N,C)
         
-        # === Global Feature Residual: 保存shortcut用于长跳跃连接 ===
-        # 让Transformer只需学习"特征残差"，减轻优化难度
         shortcut = feat.flatten(2).transpose(1, 2).view(B, T * N, self.embed_dim)
         
         attns = []
         for blk in self.blocks:
-            X, attn = blk(X, bias, T, H_p, W_p)  # 传入时空维度信息
+            X, attn = blk(X, bias, T, H_p, W_p) 
             attns.append(attn)
         
-        # === Global Feature Residual: 加上长跳跃连接 ===
         X = X + shortcut
 
-        # 7) 还原回 feature map
         X_map = X.view(B * T, N, self.embed_dim).transpose(1, 2).reshape(B * T, self.embed_dim, H_p, W_p)
         
-        # === CAB Refinement: 在上采样前细化特征 ===
         X_map = self.refinement(X_map)
         
-        # 上采样到原始分辨率
         y_bt = self.depatch(X_map)  # (B*T, 3, H, W)
         y = y_bt.reshape(B, T * self.in_ch, H, W)
         
-        # === 残差融合（可学习残差缩放）===
-        # 使用简化的可学习残差缩放：out = input + scale * delta
-        # 这更符合去雨任务的 Global Residual Learning 范式
         y_frames = y.view(B * T, self.in_ch, H, W)
         x_frames = self._x_in.view(B * T, self.in_ch, H, W)
         out_frames = x_frames + self.res_scale * y_frames
         out = out_frames.view(B, T * self.in_ch, H, W)
 
-        # 记录可学习的 tau 值到 aux（便于监控）
         tau_val = self.get_tau() if self.learnable_tau else self.temporal_tau
         aux = {
             'R': R_bt.view(B, T, 3, 3), 

@@ -73,20 +73,14 @@ def log_so3(R, eps: float = 1e-6):
     return omega
 
 def _bound_axis_angle(omega_raw, angle_max_rad: float, mode: str):
-    """
-    omega_raw: (...,3)
-    mode: 'so3'  -> bound magnitude only
-          'so2'  -> restrict to z-axis planar rotation
-    """
+
     if mode == 'so2':
-        # 仅在相机z轴旋转：theta由原预测的z分量给出，并做tanh界定
         theta_raw = omega_raw[..., 2:3]                  # (...,1)
         theta = angle_max_rad * torch.tanh(theta_raw)    # (...,1)
         k = torch.zeros_like(omega_raw)
         k[..., 2] = 1.0                                  # (...,3) , z-axis
         return k * theta                                 # (...,3)
     else:
-        # 保持方向，限制模长
         theta_raw = torch.linalg.norm(omega_raw, dim=-1, keepdim=True)  # (...,1)
         theta = angle_max_rad * torch.tanh(theta_raw)                   # (...,1)
         k = omega_raw / (theta_raw + 1e-9)
@@ -97,13 +91,10 @@ class SO3Head(nn.Module):
     def __init__(self, in_dim, hidden=128, angle_max_deg: float = 90.0,
                  mode: str = 'so3', stochastic: bool = True):
         super().__init__()
-        
-        # 预处理卷积块：在池化前过滤雨痕干扰
-        # 雨痕是高频噪声，直接平均会干扰全局运动估计
-        # 两层卷积让网络有机会在聚合全局运动前"清洗"特征
+
         self.pre_process = nn.Sequential(
             nn.Conv2d(in_dim, in_dim, 3, 1, 1),
-            nn.BatchNorm2d(in_dim),  # 运动估计对幅度不敏感，BN有助于收敛
+            nn.BatchNorm2d(in_dim),  
             nn.GELU(),
             nn.Conv2d(in_dim, in_dim, 3, 1, 1),
             nn.GELU()
@@ -121,11 +112,9 @@ class SO3Head(nn.Module):
         self.mode = mode
         self.stochastic = stochastic
         
-        # 零初始化最后一层，使初始omega≈0，即R≈I
         self._init_weights()
 
     def _init_weights(self):
-        """零初始化最后一层，使训练初期旋转接近单位阵"""
         # 最后一层是 nn.Linear(hidden, 6)
         last_linear = self.net[-1]
         if isinstance(last_linear, nn.Linear):
@@ -133,8 +122,7 @@ class SO3Head(nn.Module):
             nn.init.zeros_(last_linear.bias)
 
     def forward(self, feat):
-        # feat: (B, C, H, W)
-        # 先过预处理，过滤雨痕干扰
+
         feat_refined = self.pre_process(feat)
         
         vec = self.net(feat_refined)        # (B,6)

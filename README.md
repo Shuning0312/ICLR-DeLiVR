@@ -1,6 +1,6 @@
-# DeLiVR: Lie-Group Transformer for Video Deraining
+# DeLiVR: Differential Spatiotemporal Lie Bias for Efficient Video Deraining
 
-This repository provides a PyTorch implementation of **DeLiVR** (Derain with Lie-group Video Restoration), a Lie-group Transformer tailored for video deraining tasks.
+This repository provides a PyTorch implementation of **DeLiVR**, a Differential Spatiotemporal Lie Bias for Efficient video deraining tasks.
 
 
 ## 🔔 News
@@ -59,10 +59,10 @@ For paired video deraining (rainy → clean), organize your dataset as:
 
 | Dataset | Train Path | Test Path | Input Dir | Target Dir |
 |---------|------------|-----------|-----------|------------|
-| NTU (Derain) | `/home/exp/dataset/train/derain` | `/home/exp/dataset/test/derain` | `rainy` | `gt` |
-| Heavy Rain | `/home/exp/dataset/train/heavy` | `/home/exp/dataset/test/heavy` | `input` | `gt` |
-| Light Rain | `/home/exp/dataset/train/light` | `/home/exp/dataset/test/light` | `input` | `gt` |
-| WeatherBench | `/home/exp/dataset/train/weatherbench` | `/home/exp/dataset/test/weatherbench` | `input` | `target` |
+| [NTU (Derain)](https://github.com/hotndy/SPAC-SupplementaryMaterials) | `/home/exp/dataset/train/derain` | `/home/exp/dataset/test/derain` | `rainy` | `gt` |
+| [Heavy Rain (RainSynComplex25)](https://github.com/flyywh/J4RNet-Deep-Video-Deraining-CVPR-2018) | `/home/exp/dataset/train/heavy` | `/home/exp/dataset/test/heavy` | `input` | `gt` |
+| [Light Rain (RainSynLight25)](https://github.com/flyywh/J4RNet-Deep-Video-Deraining-CVPR-2018) | `/home/exp/dataset/train/light` | `/home/exp/dataset/test/light` | `input` | `gt` |
+| [WeatherBench](https://github.com/guanqiyuan/WeatherBench) | `/home/exp/dataset/train/weatherbench` | `/home/exp/dataset/test/weatherbench` | `input` | `target` |
 
 ---
 
@@ -145,22 +145,22 @@ ema_decay: 0.999
 cd /home/exp/ICLR-DeLiVR/lie-transformer
 
 # NTU Derain
-CUDA_VISIBLE_DEVICES=1,2,3,5,7 bash run_ddp.sh 5 --config src/config/derain_ntu.yaml
+bash run_ddp.sh 8 --config src/config/derain_ntu.yaml
 
 # Heavy Rain
-CUDA_VISIBLE_DEVICES=1,2,3,5,7 bash run_ddp.sh 5 --config src/config/derain_heavy.yaml
+bash run_ddp.sh 8 --config src/config/derain_heavy.yaml
 
 # Light Rain
-CUDA_VISIBLE_DEVICES=1,2,3,5,7 bash run_ddp.sh 5 --config src/config/derain_light.yaml
+bash run_ddp.sh 8 --config src/config/derain_light.yaml
 
 # WeatherBench
-CUDA_VISIBLE_DEVICES=1,2,3,5,7 bash run_ddp.sh 5 --config src/config/derain_weatherbench.yaml
+bash run_ddp.sh 8 --config src/config/derain_weatherbench.yaml
 ```
 
 ### Resume Training from Checkpoint
 
 ```bash
-CUDA_VISIBLE_DEVICES=1,2,3,5,7 bash run_ddp.sh 5 \
+bash run_ddp.sh 8 \
     --config src/config/derain_ntu.yaml \
     --resume /home/exp/lie-transformer/runs_NTU_video/last.pth
 ```
@@ -171,36 +171,11 @@ CUDA_VISIBLE_DEVICES=1,2,3,5,7 bash run_ddp.sh 5 \
 
 ```bash
 python test_video.py \
-    --config src/config/derain_ntu.yaml \
-    --batch_size 2 \
-    --gpu 3 \
+    --config src/config/derain_ntu.yaml  \
     --checkpoint /home/exp/lie-transformer/runs_NTU_video/last.pth \
     --data_root /home/exp/dataset/test/derain
 ```
 
-### Test Commands for Each Dataset
-
-```bash
-# NTU Derain
-python test_video.py --config src/config/derain_ntu.yaml --batch_size 2 --gpu 3 \
-    --checkpoint /home/exp/lie-transformer/runs_NTU_video/last.pth \
-    --data_root /home/exp/dataset/test/derain
-
-# Heavy Rain
-python test_video.py --config src/config/derain_heavy.yaml --batch_size 2 --gpu 3 \
-    --checkpoint /home/exp/lie-transformer/runs_Heavy_video/last.pth \
-    --data_root /home/exp/dataset/test/heavy
-
-# Light Rain
-python test_video.py --config src/config/derain_light.yaml --batch_size 2 --gpu 3 \
-    --checkpoint /home/exp/lie-transformer/runs_Light_video/last.pth \
-    --data_root /home/exp/dataset/test/light
-
-# WeatherBench
-python test_video.py --config src/config/derain_weatherbench.yaml --batch_size 2 --gpu 3 \
-    --checkpoint /home/exp/lie-transformer/runs_WeatherBench_video/last.pth \
-    --data_root /home/exp/dataset/test/weatherbench
-```
 
 ---
 
@@ -215,14 +190,14 @@ lie-transformer/
 │   │   ├── derain_light.yaml
 │   │   └── derain_weatherbench.yaml
 │   ├── data/
-│   │   ├── video_derain.py         # Video dataset loader
-│   │   └── paired_image.py         # Image pair dataset
+│   │   ├── video_derain.py         
+│   │   └── paired_image.py         
 │   ├── models/
-│   │   ├── so3.py                  # SO(3) operations: hat, exp, log, SO3Head
-│   │   ├── lie_attention.py        # Lie-aware positional encoding
-│   │   └── lie_transformer_net.py  # Full model: GDFN, CAB, LieTransformerNet
+│   │   ├── so3.py                 
+│   │   ├── lie_attention.py      
+│   │   └── lie_transformer_net.py  
 │   └── utils/
-│       └── metrics.py              # PSNR, SSIM metrics
+│       └── metrics.py             
 ├── train_video5.py                 # Main training script
 ├── test_video.py                   # Evaluation script
 ├── run_ddp.sh                      # DDP launch script

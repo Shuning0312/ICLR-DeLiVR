@@ -25,10 +25,6 @@ from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-
-# ============================================================
-# Model EMA (Exponential Moving Average)
-# ============================================================
 class ModelEMA:
 
     def __init__(self, model, decay=0.999, device=None):
@@ -86,11 +82,8 @@ def load_config(config_path):
 
 
 def merge_config_with_args(config, args):
-    """Merge config file values with command line args (CLI takes priority)."""
     for key, value in config.items():
         if hasattr(args, key):
-            # Only set if not explicitly provided via CLI (check if it's still at default)
-            # For simplicity, always use config value first, then CLI overrides
             setattr(args, key, value)
     return args
 
@@ -98,7 +91,6 @@ def merge_config_with_args(config, args):
 def get_args():
     ap = argparse.ArgumentParser()
     
-    # config file (load first, then CLI can override)
     ap.add_argument('--config', type=str, default='', 
                     help='path to YAML config file (e.g., src/config/derain_ntu.yaml)')
     
@@ -202,7 +194,6 @@ def get_args():
         # Set defaults from config
         ap.set_defaults(**config)
     
-    # Re-parse with config defaults (CLI args will override)
     args = ap.parse_args()
     
     # Validate required fields
@@ -436,11 +427,8 @@ def main():
     from torch.optim.lr_scheduler import LinearLR, SequentialLR, CosineAnnealingWarmRestarts
     warmup_epochs = getattr(args, 'warmup_epochs', 10)
     
-    # 主调度器：Cosine Warm Restarts
-    # T_0: 第一个周期的epochs
-    # T_mult: 周期倍增因子（500->1000->2000...）
-    T_0 = 500  # 第一个周期500个epochs
-    T_mult = 2  # 周期倍增因子
+    T_0 = 500 
+    T_mult = 2 
     main_scheduler = CosineAnnealingWarmRestarts(opt, T_0=T_0, T_mult=T_mult, eta_min=1e-6)
     
     if warmup_epochs > 0:
@@ -462,10 +450,6 @@ def main():
     l1 = nn.L1Loss()
     center = args.T // 2
     global_step = 0
-
-    # AMP scaler
-    # use_amp = bool(args.amp and torch.cuda.is_available())
-    # scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     use_amp = bool(args.amp and torch.cuda.is_available())
     scaler = GradScaler(device='cuda', enabled=use_amp)
@@ -588,7 +572,6 @@ def main():
                     theta_mean = ad['omega'].norm(dim=1).mean()
                     loss = loss + args.angle_reg * theta_mean
 
-                # --- Lie-velocity regularization ---
                 L_lievel = torch.tensor(0.0, device=device)
                 if args.w_lievel > 0.0 and isinstance(ad, dict) and ad.get("lie_vel_seq", None) is not None:
                     v = ad["lie_vel_seq"]                          # (B, T-1)
@@ -612,7 +595,6 @@ def main():
             scaler.step(opt)
             scaler.update()
             
-            # Update EMA (only main process)
             if use_ema and ema_model is not None:
                 ema_model.update(model)
 
@@ -627,8 +609,7 @@ def main():
                 
                 # log Lie-velocity loss
                 writer.add_scalar('train/loss_lievel', L_lievel.item() if torch.is_tensor(L_lievel) else 0.0, global_step)
-                
-                # log learnable tau and res_scale (新增)
+
                 if ad is not None:
                     if 'tau' in ad:
                         writer.add_scalar('model/tau', float(ad['tau']), global_step)

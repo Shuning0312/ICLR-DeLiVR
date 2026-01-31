@@ -18,10 +18,8 @@ class FFTLoss(nn.Module):
         fft_x = torch.fft.rfft2(x, norm='backward')
         fft_y = torch.fft.rfft2(y, norm='backward')
         
-        # 振幅损失 (主要约束)
         loss_amp = F.l1_loss(fft_x.abs(), fft_y.abs())
         
-        # 相位损失 (辅助约束，权重较低)
         loss_pha = F.l1_loss(fft_x.angle(), fft_y.angle())
         
         return loss_amp + 0.3 * loss_pha
