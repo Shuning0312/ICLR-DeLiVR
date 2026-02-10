@@ -7,10 +7,11 @@ This repository provides a PyTorch implementation of **DeLiVR** (Derain with Lie
 
 **DeLiVR** has been **accepted to ICLR 2026** 🎉  
 
-- Paper: *DeLiVR: Differential Spatiotemporal Lie Bias for Efficient Video Deraining*  
-- OpenReview discussion: https://openreview.net/forum?id=W2eNfLmCHY
----
+- Paper: [Arxiv](https://arxiv.org/abs/2509.21719)
+- OpenReview discussion: [OpenReview](https://openreview.net/forum?id=W2eNfLmCHY)
+- Pretrained Weights: [Google Drive](https://drive.google.com/file/d/14DEAb2Ch0AjOoQeLHVZ365QDhfI4mLz1/view?usp=sharing)
 
+---
 ## 1. Data Layout
 
 For paired video deraining (rainy → clean), organize your dataset as:
